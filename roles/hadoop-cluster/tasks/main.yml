@@ -1,0 +1,196 @@
+---
+# tasks file for hadoop-prereq
+
+- name: create hadoop group
+  group:
+    name: hadoop
+    gid: 995
+    state: present
+    system: yes
+
+- name: create hadoop user
+  user:
+    name: hadoop
+    comment: hadoop
+    uid: 997
+    group: hadoop
+    state: present
+    system: yes
+    home: /var/lib/hadoop
+    shell: /bin/bash
+    generate_ssh_key: "{% if 'hdfs_masters' in group_names %} True {% else %} False {% endif %}"
+
+- name: fetch hadoop user public key
+  fetch:
+    src: /var/lib/hadoop/.ssh/id_rsa.pub
+    dest: /tmp/hadoop.id_rsa.pub
+    flat: yes
+  when:
+    - "inventory_hostname == groups['hdfs_masters'] | first"
+
+- name: deploy hadoop user public key
+  authorized_key:
+    user: hadoop
+    state: present
+    key: "{{ lookup('file', '/tmp/hadoop.id_rsa.pub') }}"
+
+- name: configure hadoop home directory
+  file:
+    path: /var/lib/hadoop
+    owner: hadoop
+    group: hadoop
+    state: directory
+    mode: 0700
+
+- name: install dependencies
+  yum:
+    name: "{{ item }}"
+    state: installed
+  with_items:
+    - java-1.8.0-openjdk-headless
+    - java-1.8.0-openjdk-devel
+
+- name: set java_home
+  lineinfile:
+    line: "export JAVA_HOME='/usr/lib/jvm/java-1.8.0-openjdk'"
+    dest: /var/lib/hadoop/.bash_profile
+    create: yes
+    mode: 0700
+    owner: hadoop
+    group: hadoop
+
+- name: create hadoop binary directory
+  file:
+    path: /opt/hadoop
+    state: directory
+    mode: 0755
+    owner: hadoop
+    group: hadoop
+
+- name: download hadoop binaries
+  get_url:
+    url: "http://mirrors.ocf.berkeley.edu/apache/hadoop/common/hadoop-{{ hadoop_vers }}/hadoop-{{ hadoop_vers }}.tar.gz"
+    dest: "/var/lib/hadoop/hadoop-{{ hadoop_vers }}.tgz"
+
+- name: extract hadoop binaries
+  unarchive:
+    src: "/var/lib/hadoop/hadoop-{{ hadoop_vers }}.tgz"
+    dest: /opt/hadoop
+    remote_src: yes
+    keep_newer: yes
+    creates: "/opt/hadoop/hadoop-{{ hadoop_vers }}"
+
+- name: add hadoop binaries to search path
+  lineinfile:
+    dest: /etc/profile.d/99-hadoop.sh
+    create: yes
+    owner: root
+    group: root
+    mode: 0755
+    line: "export PATH=/opt/hadoop/hadoop-{{ hadoop_vers }}/bin:$PATH"
+
+- name:  create hadoop data partition
+  parted:
+    device: "{{ hadoop_device }}"
+    number: 1
+    part_start: 0%
+    part_end: 100%
+    state: present
+
+- name: create hadoop data filesystem
+  filesystem:
+    fstype: ext3
+    device: "{{ hadoop_device }}p1"
+  register: hadoop_datafs
+
+- name: create hadoop data directory
+  file:
+    dest: /var/lib/hadoop/data
+    owner: hadoop
+    group: hadoop
+    mode: 0750
+    state: directory
+
+- name: mount hadoop data directory
+  mount:
+    path: /var/lib/hadoop/data
+    src: "{{ hadoop_device }}p1"
+    fstype: ext3
+    state: mounted
+
+- name: set hadoop java_home
+  lineinfile:
+    line: "export JAVA_HOME='/usr/lib/jvm/java-1.8.0-openjdk'"
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/hadoop-env.sh"
+    create: yes
+    mode: 0755
+    owner: hadoop
+    group: hadoop
+
+- name: deploy core-site config
+  template:
+    src: core-site.xml.j2
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/core-site.xml"
+
+- name: deploy hdfs-site config
+  template:
+    src: hdfs-site.xml.j2
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/hdfs-site.xml"
+
+- name: deploy mapred-site config
+  template:
+    src: mapred-site.xml.j2
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/mapred-site.xml.j2"
+
+- name: deploy yarn-site config
+  template:
+    src: yarn-site.xml.j2
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/yarn-site.xml"
+
+- name: deploy workers config
+  template:
+    src: workers.j2
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/etc/hadoop/workers"
+
+- name: create logs directory
+  file:
+    dest: "/opt/hadoop/hadoop-{{ hadoop_vers }}/logs"
+    state: directory
+    mode: 0750
+    owner: hadoop
+    group: hadoop
+
+- name: open master firewall ports
+  firewalld:
+    port: "{{ item }}"
+    state: enabled
+    permanent: yes
+    immediate: yes
+  with_items:
+    - 8030/tcp  # yarn
+    - 8031/tcp  # yarn
+    - 8032/tcp  # yarn
+    - 8033/tcp  # yarn
+    - 8088/tcp  # yarn
+    - 9000/tcp  # hfs
+    - 9868/tcp  # hfs
+    - 9870/tcp  # hfs
+  when:
+    - "inventory_hostname in groups['hdfs_masters']"
+
+- name: open worker ports
+  firewalld:
+    port: "{{ item }}"
+    state: enabled
+    permanent: yes
+    immediate: yes
+  with_items:
+    - 13562/tcp  # yarn
+    - 42116/tcp  # yarn
+    - 8040/tcp  # yarn
+    - 8042/tcp  # yarn
+    - 9864/tcp  # hfs
+    - 9866/tcp  # hfs
+    - 9867/tcp  # hfs
+  when:
+    - "inventory_hostname in groups['hdfs_workers']"

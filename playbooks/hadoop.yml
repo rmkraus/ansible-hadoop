@@ -1,0 +1,8 @@
+#!/usr/bin/env ansible-playbook -l hadoop
+---
+
+- name: setup hadoop prerequisites
+  hosts: hadoop
+
+  roles:
+    - hadoop-cluster
