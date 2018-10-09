@@ -1,5 +1,5 @@
 ---
-# tasks file for hadoop-prereq
+# tasks file for hadoop-cluster
 
 - name: create hadoop group
   group:
