@@ -1,5 +1,5 @@
 ---
 # defaults file for hadoop-cluster
-hadoop_vers=3.1.1
-hadoop_device=/dev/sdb
-hadoop_replication=1
+hadoop_vers: 3.1.1
+hadoop_device: /dev/sdb
+hadoop_replication: 1
