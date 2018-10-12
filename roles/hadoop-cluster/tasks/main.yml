@@ -100,7 +100,7 @@
 - name: create hadoop data filesystem
   filesystem:
     fstype: ext3
-    device: "{{ hadoop_device }}p1"
+    device: "{{ hadoop_device }}1"
   register: hadoop_datafs
 
 - name: create hadoop data directory
@@ -114,7 +114,7 @@
 - name: mount hadoop data directory
   mount:
     path: /var/lib/hadoop/data
-    src: "{{ hadoop_device }}p1"
+    src: "{{ hadoop_device }}1"
     fstype: ext3
     state: mounted
 
